@@ -4103,7 +4103,8 @@ class NFINextMultiOffsetAndHO(IStrategy):
         for i in self.ma_types:
             conditions.append(
                 (
-                    (dataframe['close'] > dataframe[f'{i}_offset_sell']) &
+                    (qtpylib.crossed_below(dataframe['close'], dataframe[f'{i}_offset_sell'])) &
+                    # (dataframe['close'] > dataframe[f'{i}_offset_sell']) &
                     (dataframe['volume'] > 0)
                 )
             )
