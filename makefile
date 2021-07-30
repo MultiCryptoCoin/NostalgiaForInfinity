@@ -20,7 +20,7 @@ pairs: # pull pairs for $COIN
 
 list-data: # list data
 	docker-compose run --rm freqtrade \
-		 list-data --config user_data/data/pairlists.json --config user_data/data/${EXCHANGE:-binance}-usdt-static.json
+		 list-data --config user_data/data/pairlists.json --config user_data/data/$(EXCHANGE)-usdt-static.json
 
 list-strats: # list strategies
 	@echo $(STRATEGIES)
@@ -28,18 +28,18 @@ list-strats: # list strategies
 
 test: # run backtest
 	docker-compose run --rm freqtrade \
-		backtesting --config user_data/data/pairlists.json --config user_data/data/${EXCHANGE:-binance}-usdt-static.json --strategy-list $(STRATEGY) --timeframe $(B_TIMEFRAME) --timerange=$(TIMERANGE) \
+		backtesting --config user_data/data/pairlists.json --config user_data/data/$(EXCHANGE)-usdt-static.json --strategy-list $(STRATEGY) --timeframe $(B_TIMEFRAME) --timerange=$(TIMERANGE) \
 		--export=trades
 	osascript -e 'display notification "Done"'
 
 test-all: # run backtest on all strats
 	docker-compose run --rm freqtrade \
-		backtesting --config user_data/data/pairlists.json --config user_data/data/${EXCHANGE:-binance}-usdt-static.json --strategy-list $(STRATEGIES) --timerange=$(TIMERANGE) --timeframe $(B_TIMEFRAME) --export=trades
+		backtesting --config user_data/data/pairlists.json --config user_data/data/$(EXCHANGE)-usdt-static.json --strategy-list $(STRATEGIES) --timerange=$(TIMERANGE) --timeframe $(B_TIMEFRAME) --export=trades
 	osascript -e 'display notification "Done"'
 
 hyperopt: data # run hyper opt
 	docker-compose run --rm freqtrade \
-		hyperopt --config user_data/data/pairlists.json --config user_data/data/${EXCHANGE:-binance}-usdt-static.json --hyperopt-loss $(LOSS) --spaces $(SPACES) --strategy $(STRATEGY) -e $(EPOCHS) --timerange=$(TIMERANGE) --timeframe=$(TIMEFRAME) --random-state 42 -j 12
+		hyperopt --config user_data/data/pairlists.json --config user_data/data/$(EXCHANGE)-usdt-static.json --hyperopt-loss $(LOSS) --spaces $(SPACES) --strategy $(STRATEGY) -e $(EPOCHS) --timerange=$(TIMERANGE) --timeframe=$(TIMEFRAME) --random-state 42 -j 12
 	osascript -e 'display notification "Done"'
 
 stop: # stop containers
@@ -51,4 +51,4 @@ shell: # run bash
 
 dry: # run dry mode
 	docker-compose run --rm freqtrade \
-		freqtrade trade --config user_data/data/pairlists.json --config user_data/data/${EXCHANGE:-binance}-usdt-static.json --verbose
+		freqtrade trade --config user_data/data/pairlists.json --config user_data/data/$(EXCHANGE)-usdt-static.json --verbose
