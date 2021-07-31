@@ -50,5 +50,7 @@ services:
     volumes:
       - "./user_data:/freqtrade/user_data"
       - "./NostalgiaForInfinityNext.py:/freqtrade/NostalgiaForInfinityNext.py"
+    ports:
+       - "0.0.0.0:4406:4406"
     tty: true
 
