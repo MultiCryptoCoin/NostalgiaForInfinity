@@ -52,3 +52,8 @@ shell: # run bash
 dry: # run dry mode
 	docker-compose run --rm freqtrade \
 		freqtrade trade --config user_data/data/pairlists.json --config user_data/data/$(EXCHANGE)-usdt-static.json --verbose
+
+
+webserver: # run dry mode
+	docker-compose run --rm freqtrade \
+		freqtrade webserver --config user_data/data/pairlists.json --config user_data/data/$(EXCHANGE)-usdt-static.json --verbose
