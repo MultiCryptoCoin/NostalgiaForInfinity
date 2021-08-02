@@ -174,3 +174,5 @@ class SMAOffsetProtectOptV1(IStrategy):
             ]=1
 
         return dataframe
+
+
