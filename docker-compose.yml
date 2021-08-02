@@ -22,7 +22,7 @@ services:
       - "./NostalgiaForInfinityNext.py:/freqtrade/NostalgiaForInfinityNext.py"
     command: >
       backtesting
-      --strategy-list ${STRATEGIES:-NostalgiaForInfinityNext NostalgiaForInfinityV1 SMAOffsetProtectOpt ElliotV2 ElliotV3}
+      --strategy-list ${STRATEGIES:-NostalgiaForInfinityV1 NostalgiaForInfinityV2 NostalgiaForInfinityNext Combined_NFIv6_SMA SMAOffsetProtectOpt BinClucMadDevelop ElliotV2 ElliotV3}
       --timerange ${TIMERANGE:-20210508-20210608}
       --config user_data/data/pairlists.json
       --config user_data/data/${EXCHANGE:-binance}-usdt-static.json
