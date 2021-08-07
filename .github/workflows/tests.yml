@@ -3,6 +3,7 @@ name: CI
 on: [push, pull_request]
 
 jobs:
+
   Pre-Commit:
     runs-on: ubuntu-20.04
     steps:
@@ -78,6 +79,7 @@ jobs:
           name: backtest_result
           path: backtest_${{ matrix.timerange }}_${{ matrix.opentrades }}.txt
 
+
   Kucoin-Backtests:
     strategy:
       fail-fast: false
@@ -118,10 +120,20 @@ jobs:
           name: backtest_result
           path: backtest_${{ matrix.timerange }}_${{ matrix.opentrades }}.txt
 
+
   Binance-Backest-Tests:
     runs-on: ubuntu-20.04
     needs:
       - Pre-Commit
+    strategy:
+      fail-fast: false
+      matrix:
+        timerange:
+          - 20210101-20210201
+          - 20210201-20210301
+          - 20210301-20210401
+          - 20210401-20210501
+          - 20210601-20210701
 
     steps:
       - uses: actions/checkout@v2
@@ -133,7 +145,7 @@ jobs:
 
       - name: Run Tests
         env:
-          EXTRA_ARGS: tests/backtests/binance/
+          EXTRA_ARGS: tests/backtests -k 'binance and ${{ matrix.timerange }}'
         run: |
           mkdir artifacts
           chmod 777 artifacts
@@ -145,10 +157,20 @@ jobs:
           name: binance-testrun-artifacts
           path: artifacts/
 
+
   Kucoin-Backest-Tests:
     runs-on: ubuntu-20.04
     needs:
       - Pre-Commit
+    strategy:
+      fail-fast: false
+      matrix:
+        timerange:
+          - 20210101-20210201
+          - 20210201-20210301
+          - 20210301-20210401
+          - 20210401-20210501
+          - 20210601-20210701
 
     steps:
       - uses: actions/checkout@v2
@@ -160,7 +182,7 @@ jobs:
 
       - name: Run Tests
         env:
-          EXTRA_ARGS: tests/backtests/kucoin/
+          EXTRA_ARGS: tests/backtests -k 'kucoin and ${{ matrix.timerange }}'
         run: |
           mkdir artifacts
           chmod 777 artifacts
@@ -171,6 +193,7 @@ jobs:
         with:
           name: kucoin-testrun-artifacts
           path: artifacts/
+
 
   Remaining-Tests:
     runs-on: ubuntu-20.04
@@ -187,8 +210,75 @@ jobs:
 
       - name: Run Tests
         env:
-          EXTRA_ARGS: --ignore tests/backtests/binance/ --ignore tests/backtests/kucoin/
+          EXTRA_ARGS: --ignore tests/backtests/
         run: |
           mkdir artifacts
           chmod 777 artifacts
           docker-compose run --rm tests
+
+  Backest-CI-Stats:
+    runs-on: ubuntu-20.04
+    needs:
+      - Kucoin-Backest-Tests
+      - Binance-Backest-Tests
+
+    steps:
+
+      - uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install -r tests/ci-requirements.txt
+
+      - name: Download Previous Binance CI Artifacts
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          workflow: tests.yml
+          branch: ${{ github.base_ref || 'main' }}
+          path: results/previous
+          name: binance-testrun-artifacts
+
+      - name: Download Previous Kucoin CI Artifacts
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          workflow: tests.yml
+          branch: ${{ github.base_ref || 'main' }}
+          path: results/previous
+          name: kucoin-testrun-artifacts
+
+
+      - name: Download Current Binance CI Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: binance-testrun-artifacts
+          path: results/current
+
+      - name: Download Current Kucoin CI Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: kucoin-testrun-artifacts
+          path: results/current
+
+      - name: Show Downloaded Artifacts
+        run: |
+          tree results
+
+      - name: Show Environ
+        env:
+          PULL_REQUEST: ${{ github.event.number }}
+        run: |
+          env
+
+      - name: Comment CI Results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python .github/workflows/scripts/comment-ci-results.py \
+            --repo=${{ github.event.repository.full_name }}

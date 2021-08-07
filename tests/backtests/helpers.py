@@ -55,15 +55,27 @@ class ProcessResult:
 
 
 class Backtest:
-    def __init__(self, request, exchange):
+    def __init__(self, request, exchange=None):
         self.request = request
         self.exchange = exchange
 
     def __call__(
-        self, start_date, end_date, pairlist=None, max_open_trades=5, stake_amount="unlimited"
+        self,
+        start_date,
+        end_date,
+        pairlist=None,
+        max_open_trades=5,
+        stake_amount="unlimited",
+        exchange=None,
     ):
+        if exchange is None:
+            exchange = self.exchange
+        if exchange is None:
+            raise RuntimeError(
+                f"No 'exchange' was passed when instantiating {self.__class__.__name__} or when calling it"
+            )
         tmp_path = self.request.getfixturevalue("tmp_path")
-        exchange_config = f"user_data/data/{self.exchange}-usdt-static.json"
+        exchange_config = f"user_data/data/{exchange}-usdt-static.json"
         json_results_file = tmp_path / "backtest-results.json"
         cmdline = [
             "freqtrade",
@@ -74,15 +86,15 @@ class Backtest:
             f"--max-open-trades={max_open_trades}",
             f"--stake-amount={stake_amount}",
             "--config=user_data/data/pairlists.json",
-            f"--export-filename={json_results_file}",
         ]
         if pairlist is None:
             cmdline.append(f"--config={exchange_config}")
         else:
-            pairlist_config = {"exchange": {"name": self.exchange, "pair_whitelist": pairlist}}
+            pairlist_config = {"exchange": {"name": exchange, "pair_whitelist": pairlist}}
             pairlist_config_file = tmp_path / "test-pairlist.json"
             pairlist_config_file.write(json.dumps(pairlist_config))
             cmdline.append(f"--config={pairlist_config_file}")
+        cmdline.append(f"--export-filename={json_results_file}")
         log.info("Running cmdline '%s' on '%s'", " ".join(cmdline), REPO_ROOT)
         proc = subprocess.run(
             cmdline, check=False, shell=False, cwd=REPO_ROOT, text=True, capture_output=True
@@ -93,30 +105,106 @@ class Backtest:
             stderr=proc.stderr.strip(),
             cmdline=cmdline,
         )
-        log.info("Command Result:\n%s", ret)
+        if ret.exitcode != 0:
+            log.info("Command Result:\n%s", ret)
+        else:
+            log.debug("Command Result:\n%s", ret)
         assert ret.exitcode == 0
         generated_results_file = list(tmp_path.rglob("backtest-results-*.json"))[0]
+        generated_json_ci_results_artifact_path = None
         if self.request.config.option.artifacts_path:
             generated_json_results_artifact_path = (
                 self.request.config.option.artifacts_path / generated_results_file.name
             )
             shutil.copyfile(generated_results_file, generated_json_results_artifact_path)
+            generated_json_ci_results_artifact_path = (
+                self.request.config.option.artifacts_path
+                / f"ci-results-{exchange}-{start_date}-{end_date}.json"
+            )
+
             generated_txt_results_artifact_path = generated_json_results_artifact_path.with_suffix(
                 ".txt"
             )
             generated_txt_results_artifact_path.write_text(ret.stdout.strip())
 
         results_data = json.loads(generated_results_file.read_text())
-        data = {
-            "stdout": ret.stdout.strip(),
-            "stderr": ret.stderr.strip(),
-            "results": results_data["strategy"]["NostalgiaForInfinityNext"],
-            "stats": results_data["strategy_comparison"][0],
-        }
-        # At some point, consider logging at the debug level or removing this log call
-        # which is only here to understand the JSON results data structure.
-        log.info(
-            "Backtest results:\n%s",
-            pprint.pformat({"results": data["results"], "stats": data["stats"]}),
+        ret = BacktestResults(
+            stdout=ret.stdout.strip(),
+            stderr=ret.stderr.strip(),
+            raw_data=results_data,
         )
-        return json.loads(json.dumps(data), object_hook=lambda d: SimpleNamespace(**d))
+        if generated_json_ci_results_artifact_path:
+            generated_json_ci_results_artifact_path.write_text(
+                json.dumps({f"{start_date}-{end_date}": ret._stats_pct})
+            )
+        ret.log_info()
+        return ret
+
+
+@attr.s(frozen=True)
+class BacktestResults:
+    stdout: str = attr.ib(repr=False)
+    stderr: str = attr.ib(repr=False)
+    raw_data: dict = attr.ib(repr=False)
+    _results: dict = attr.ib(init=False, repr=False)
+    _stats: dict = attr.ib(init=False, repr=False)
+    results: SimpleNamespace = attr.ib(init=False, repr=False)
+    full_stats: SimpleNamespace = attr.ib(init=False, repr=False)
+    _stats_pct: dict = attr.ib(init=False, repr=False)
+    stats_pct: SimpleNamespace = attr.ib(init=False, repr=True)
+
+    @_results.default
+    def _set_results(self):
+        return self.raw_data["strategy"]["NostalgiaForInfinityNext"]
+
+    @_stats.default
+    def _set_stats(self):
+        return self.raw_data["strategy_comparison"][0]
+
+    @results.default
+    def _set_results(self):
+        return json.loads(json.dumps(self._results), object_hook=lambda d: SimpleNamespace(**d))
+
+    @full_stats.default
+    def _set_full_stats(self):
+        return json.loads(json.dumps(self._stats), object_hook=lambda d: SimpleNamespace(**d))
+
+    @_stats_pct.default
+    def _set__stats_pct(self):
+        return {
+            "duration_avg": self.full_stats.duration_avg,
+            "profit_sum_pct": self.full_stats.profit_sum_pct,
+            "profit_mean_pct": self.full_stats.profit_mean_pct,
+            "profit_total_pct": self.full_stats.profit_total_pct,
+            "max_drawdown": self.results.max_drawdown * 100,
+            "winrate": round(self.full_stats.wins * 100.0 / self.full_stats.trades, 2),
+        }
+
+    @stats_pct.default
+    def _set_stats_pct(self):
+        return json.loads(json.dumps(self._stats_pct), object_hook=lambda d: SimpleNamespace(**d))
+
+    def log_info(self):
+        data = {
+            "results": self._results,
+            "full_stats": self._stats,
+            "stats_pct": self._stats_pct,
+        }
+        log.debug("Backtest results:\n%s", pprint.pformat(data))
+        log.info(
+            "Backtests Stats PCTs(More info at the DEBUG log level): %s",
+            pprint.pformat(self._stats_pct),
+        )
+
+
+@attr.s(frozen=True)
+class Timerange:
+    start_date = attr.ib()
+    end_date = attr.ib()
+
+
+@attr.s(frozen=True)
+class Exchange:
+    name = attr.ib()
+    winrate = attr.ib()
+    max_drawdown = attr.ib()
