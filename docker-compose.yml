@@ -22,7 +22,7 @@ services:
       - "./NostalgiaForInfinityNext.py:/freqtrade/NostalgiaForInfinityNext.py"
     command: >
       backtesting
-      --strategy-list NostalgiaForInfinityNext
+      --strategy-list ${STRATIGIES:-NostalgiaForInfinityNext}
       --timerange ${TIMERANGE:-20210601-20210801}
       --config user_data/data/pairlists.json
       --config user_data/data/${EXCHANGE:-binance}-usdt-static.json
