@@ -10,13 +10,13 @@ the repository and it's submodules.
 ### Newer versions of Git
 
 ```bash
-git clone --recurse-submodules https://github.com/iterativv/NostalgiaForInfinity.git checkout-path
+git clone --recurse-submodules https://github.com/MultiCryptoCoin/NostalgiaForInfinity.git checkout-path
 ```
 
 ### Older versions of Git
 
 ```bash
-git clone --recursive https://github.com/iterativv/NostalgiaForInfinity.git checkout-path
+git clone --recursive https://github.com/MultiCryptoCoin/NostalgiaForInfinity.git checkout-path
 ```
 
 ### Existing Checkouts
@@ -56,7 +56,7 @@ If you want to change `--max-open-trades` or `--stake-amount` or `--timerange` c
 
 ## Update pairs or timeframe
 
-### From the [NostalgiaForInfinityData](https://github.com/iterativv/NostalgiaForInfinityData) repository
+### From the [NostalgiaForInfinityData](https://github.com/MultiCryptoCoin/NostalgiaForInfinityData) repository
 ```bash
 git submodule update --remote --checkout
 ```
@@ -74,9 +74,9 @@ docker-compose run --rm download-data
 ### Updating Pairs or Timeframe - Long Term
 
 To update either the pair list or the downloaded data time frames, please check
-[NostalgiaForInfinityData](https://github.com/iterativv/NostalgiaForInfinityData) and proceed from there.
+[NostalgiaForInfinityData](https://github.com/MultiCryptoCoin/NostalgiaForInfinityData) and proceed from there.
 
-Once the necessary changes are done in [NostalgiaForInfinityData](https://github.com/iterativv/NostalgiaForInfinityData) run the following:
+Once the necessary changes are done in [NostalgiaForInfinityData](https://github.com/MultiCryptoCoin/NostalgiaForInfinityData) run the following:
 
 ```bash
 git submodule update --remote --merge
