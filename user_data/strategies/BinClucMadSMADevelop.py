@@ -10,6 +10,7 @@ from freqtrade.strategy import (
     CategoricalParameter,
     DecimalParameter,
     IntParameter,
+    stoploss_from_open,
 )
 from functools import reduce
 import logging
@@ -18,32 +19,15 @@ import logging
 # --- logger for parameter merging output, only remove if you remove it further down too! ---------
 logger = logging.getLogger(__name__)
 # -------------------------------------------------------------------------------------------------
-# SSL Channels
-def SSLChannels(dataframe, length=7):
-    df = dataframe.copy()
-    df["ATR"] = ta.ATR(df, timeperiod=14)
-    df["smaHigh"] = df["high"].rolling(length).mean() + df["ATR"]
-    df["smaLow"] = df["low"].rolling(length).mean() - df["ATR"]
-    df["hlv"] = np.where(
-        df["close"] > df["smaHigh"], 1, np.where(df["close"] < df["smaLow"], -1, np.NAN)
-    )
-    df["hlv"] = df["hlv"].ffill()
-    df["sslDown"] = np.where(df["hlv"] < 0, df["smaHigh"], df["smaLow"])
-    df["sslUp"] = np.where(df["hlv"] < 0, df["smaLow"], df["smaHigh"])
-    return df["sslDown"], df["sslUp"]
 
 
-class BinClucMadDevelop(IStrategy):
+class BinClucMadSMADevelop(IStrategy):
     INTERFACE_VERSION = 2
 
-    # minimal_roi = {
-    #     "0": 0.028,  # I feel lucky!
-    #     "10": 0.018,
-    #     "40": 0.005,
-    # }
+    # minimal_roi = {"0": 0.038, "20": 0.028, "40": 0.02, "60": 0.015, "180": 0.018, }
+    # minimal_roi = {"0": 0.038, "20": 0.028, "40": 0.02, "60": 0.015, "180": 0.018, }
     minimal_roi = {"0": 0.20, "38": 0.074, "78": 0.025, "194": 0}
-
-    stoploss = -0.99  # effectively disabled.
+    stoploss = -0.228  # effectively disabled.
 
     timeframe = "5m"
     informative_timeframe = "1h"
@@ -52,13 +36,13 @@ class BinClucMadDevelop(IStrategy):
     use_sell_signal = True
     sell_profit_only = False
     sell_profit_offset = 0.001
-    ignore_roi_if_buy_signal = False
+    ignore_roi_if_buy_signal = True
 
     # Trailing stoploss
     trailing_stop = True
     trailing_only_offset_is_reached = True
     trailing_stop_positive = 0.01
-    trailing_stop_positive_offset = 0.05
+    trailing_stop_positive_offset = 0.049
 
     # Custom stoploss
     use_custom_stoploss = False
@@ -72,6 +56,8 @@ class BinClucMadDevelop(IStrategy):
         "buy_minimum_conditions": 1,
         #############
         # Enable/Disable conditions
+        "smaoffset_buy_condition_0_enable": True,
+        "smaoffset_buy_condition_1_enable": True,
         "v6_buy_condition_0_enable": True,
         "v6_buy_condition_1_enable": True,
         "v6_buy_condition_2_enable": True,
@@ -99,6 +85,7 @@ class BinClucMadDevelop(IStrategy):
         "v9_sell_condition_0_enable": False,
         "v8_sell_condition_0_enable": True,
         "v8_sell_condition_1_enable": True,
+        "smaoffset_sell_condition_0_enable": False,
     }
 
     # if you want to see which buy conditions were met
@@ -107,7 +94,44 @@ class BinClucMadDevelop(IStrategy):
     cust_log_verbose = False
 
     ############################################################################
+    # Buy SMAOffsetProtectOpt
+
+    smaoffset_buy_condition_0_enable = CategoricalParameter(
+        [True, False], default=True, space="buy", optimize=False, load=True
+    )
+    smaoffset_buy_condition_1_enable = CategoricalParameter(
+        [True, False], default=True, space="buy", optimize=False, load=True
+    )
+    smaoffset_sell_condition_0_enable = CategoricalParameter(
+        [True, False], default=True, space="sell", optimize=False, load=True
+    )
+    # hyperopt parameters for SMAOffsetProtectOpt
+    base_nb_candles_buy = IntParameter(
+        5, 80, default=20, space="buy", optimize=False, load=True
+    )
+    base_nb_candles_sell = IntParameter(
+        5, 80, default=24, space="sell", optimize=False, load=True
+    )
+    low_offset = DecimalParameter(
+        0.9, 0.99, default=0.975, space="buy", optimize=True, load=True
+    )
+    high_offset = DecimalParameter(
+        0.99, 1.1, default=1.012, space="sell", optimize=True, load=True
+    )
+    # Protection
+    fast_ewo = IntParameter(10, 50, default=50, space="buy", optimize=False, load=True)
+    slow_ewo = IntParameter(
+        100, 200, default=200, space="buy", optimize=False, load=True
+    )
+    ewo_low = DecimalParameter(
+        -20.0, -8.0, default=-19.881, space="buy", optimize=True, load=True
+    )
+    ewo_high = DecimalParameter(
+        2.0, 12.0, default=5.499, space="buy", optimize=True, load=True
+    )
+    rsi_buy = IntParameter(30, 70, default=50, space="buy", optimize=True, load=True)
     # Buy CombinedBinHClucAndMADV6
+
     v6_buy_condition_0_enable = CategoricalParameter(
         [True, False], default=True, space="buy", optimize=False, load=True
     )
@@ -327,7 +351,7 @@ class BinClucMadDevelop(IStrategy):
         1, 2, default=1, space="buy", optimize=False, load=True
     )
 
-    def custom_stoplossv8(
+    def custom_stoploss(
         self,
         pair: str,
         trade: "Trade",
@@ -372,38 +396,6 @@ class BinClucMadDevelop(IStrategy):
 
                     # Whoops, set stoploss at 10%
                     return 0.1
-
-        return 0.99
-
-    def custom_stoploss(
-        self,
-        pair: str,
-        trade: "Trade",
-        current_time: datetime,
-        current_rate: float,
-        current_profit: float,
-        **kwargs,
-    ) -> float:
-        # Manage losing trades and open room for better ones.
-        if (current_profit < 0) & (
-            current_time - timedelta(minutes=280) > trade.open_date_utc
-        ):
-            return 0.01
-        elif current_profit < self.sell_custom_stoploss_1.value:
-            dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
-            candle = dataframe.iloc[-1].squeeze()
-            if candle is not None:
-                # if (candle["sma_200_dec"]) & (candle["sma_200_dec_1h"]):
-                #     return 0.01
-                # We are at bottom. Wait...
-                if candle["rsi_1h"] < 30:
-                    return 0.99
-                # Are we still sinking?
-                if candle["close"] > candle["ema_200"]:
-                    if current_rate * 1.025 < candle["open"]:
-                        return 0.01
-                if current_rate * 1.015 < candle["open"]:
-                    return 0.01
 
         return 0.99
 
@@ -461,6 +453,9 @@ class BinClucMadDevelop(IStrategy):
                 )
             ):
                 return "trail_target_2"
+        # Sell any positions at a loss if they are held for more than one day.
+        # if current_profit < 0.0 and (current_time - trade.open_date_utc).days >= 2:
+        #     return 'unclog'
 
         return None
 
@@ -531,6 +526,20 @@ class BinClucMadDevelop(IStrategy):
         dataframe["rsi"] = ta.RSI(dataframe, timeperiod=14)
         # MFI
         dataframe["mfi"] = ta.MFI(dataframe, timeperiod=14)
+        # ------ ATR stuff
+        dataframe["atr"] = ta.ATR(dataframe, timeperiod=14)
+
+        # ------ SMAOffsetProtectOpt
+        # Calculate all ma_buy values
+        for val in self.base_nb_candles_buy.range:
+            dataframe[f"ma_buy_{val}"] = ta.EMA(dataframe, timeperiod=val)
+
+        # Calculate all ma_sell values
+        for val in self.base_nb_candles_sell.range:
+            dataframe[f"ma_sell_{val}"] = ta.EMA(dataframe, timeperiod=val)
+
+        # Elliot
+        dataframe["EWO"] = EWO(dataframe, self.fast_ewo.value, self.slow_ewo.value)
 
         return dataframe
 
@@ -572,8 +581,32 @@ class BinClucMadDevelop(IStrategy):
         dataframe.loc[:, "v8_buy_condition_2_enable"] = False
         dataframe.loc[:, "v8_buy_condition_3_enable"] = False
         dataframe.loc[:, "v8_buy_condition_4_enable"] = False
+        dataframe.loc[:, "smaoffset_buy_condition_0_enable"] = False
+        dataframe.loc[:, "smaoffset_buy_condition_1_enable"] = False
         dataframe.loc[:, "conditions_count"] = 0
+        dataframe["ma_buy"] = (
+            dataframe[f"ma_buy_{self.base_nb_candles_buy.value}"]
+            * self.low_offset.value
+        )
 
+        dataframe.loc[
+            (
+                (dataframe["close"] < dataframe["ma_buy"])
+                & (dataframe["EWO"] > self.ewo_high.value)
+                & (dataframe["rsi"] < self.rsi_buy.value)
+                & (self.smaoffset_buy_condition_0_enable.value == True)
+            ),
+            "smaoffset_buy_condition_0_enable",
+        ] = 1
+
+        dataframe.loc[
+            (
+                (dataframe["close"] < dataframe["ma_buy"])
+                & (dataframe["EWO"] < self.ewo_low.value)
+                & (self.smaoffset_buy_condition_1_enable.value == True)
+            ),
+            "smaoffset_buy_condition_1_enable",
+        ] = 1
         dataframe.loc[
             (
                 (dataframe["close"] > dataframe["ema_200_1h"])
@@ -1059,6 +1092,8 @@ class BinClucMadDevelop(IStrategy):
             + dataframe["v8_buy_condition_2_enable"].astype(int)
             + dataframe["v8_buy_condition_3_enable"].astype(int)
             + dataframe["v8_buy_condition_4_enable"].astype(int)
+            + dataframe["smaoffset_buy_condition_0_enable"].astype(int)
+            + dataframe["smaoffset_buy_condition_1_enable"].astype(int)
         )
 
         # append the minimum amount of conditions to be met
@@ -1074,8 +1109,7 @@ class BinClucMadDevelop(IStrategy):
         if self.cust_log_verbose == True:
             for index, row in dataframe.iterrows():
                 if row["buy"] == 1:
-                    # buy_cond_details = f"count={int(row['conditions_count'])}/bin={int(row['buy_cond_bin'])}/cluc={int(row['buy_cond_cluc'])}/v9_={int(row['buy_cond_long'])}"
-                    buy_cond_details = f"count={int(row['conditions_count'])}/v9_1={int(row['v9_buy_condition_1_enable'])}/v9_2={int(row['v9_buy_condition_2_enable'])}/v9_3={int(row['v9_buy_condition_3_enable'])}/v9_4={int(row['v9_buy_condition_4_enable'])}/v9_5={int(row['v9_buy_condition_5_enable'])}/v9_6={int(row['v9_buy_condition_6_enable'])}/v9_7={int(row['v9_buy_condition_7_enable'])}/v9_8={int(row['v9_buy_condition_8_enable'])}/v9_9={int(row['v9_buy_condition_9_enable'])}/v9_10={int(row['v9_buy_condition_10_enable'])}/v6_0={int(row['v6_buy_condition_0_enable'])}/v6_1={int(row['v6_buy_condition_1_enable'])}/v6_2={int(row['v6_buy_condition_2_enable'])}/v6_3={int(row['v6_buy_condition_3_enable'])}/v8_0={int(row['v8_buy_condition_0_enable'])}/v8_1={int(row['v8_buy_condition_1_enable'])}/v8_2={int(row['v8_buy_condition_2_enable'])}/v8_3={int(row['v8_buy_condition_3_enable'])}/v8_4={int(row['v8_buy_condition_4_enable'])}"
+                    buy_cond_details = f"count={int(row['conditions_count'])}/v9_1={int(row['v9_buy_condition_1_enable'])}/v9_2={int(row['v9_buy_condition_2_enable'])}/v9_3={int(row['v9_buy_condition_3_enable'])}/v9_4={int(row['v9_buy_condition_4_enable'])}/v9_5={int(row['v9_buy_condition_5_enable'])}/v9_6={int(row['v9_buy_condition_6_enable'])}/v9_7={int(row['v9_buy_condition_7_enable'])}/v9_8={int(row['v9_buy_condition_8_enable'])}/v9_9={int(row['v9_buy_condition_9_enable'])}/v9_10={int(row['v9_buy_condition_10_enable'])}/v6_0={int(row['v6_buy_condition_0_enable'])}/v6_1={int(row['v6_buy_condition_1_enable'])}/v6_2={int(row['v6_buy_condition_2_enable'])}/v6_3={int(row['v6_buy_condition_3_enable'])}/v8_0={int(row['v8_buy_condition_0_enable'])}/v8_1={int(row['v8_buy_condition_1_enable'])}/v8_2={int(row['v8_buy_condition_2_enable'])}/v8_3={int(row['v8_buy_condition_3_enable'])}/v8_4={int(row['v8_buy_condition_4_enable'])}/sma_0={int(row['smaoffset_buy_condition_0_enable'])}/sma_1={int(row['smaoffset_buy_condition_1_enable'])}"
 
                     logger.info(
                         f"{metadata['pair']} - candle: {row['date']} - buy condition - details: {buy_cond_details}"
@@ -1085,6 +1119,17 @@ class BinClucMadDevelop(IStrategy):
 
     def populate_sell_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         conditions = []
+        dataframe["ma_sell"] = (
+            dataframe[f"ma_sell_{self.base_nb_candles_sell.value}"]
+            * self.high_offset.value
+        )
+        if self.smaoffset_sell_condition_0_enable.value:
+            conditions.append(
+                (
+                    (qtpylib.crossed_below(dataframe["close"], dataframe["ma_sell"]))
+                    & (dataframe["volume"] > 0)
+                )
+            )
         if self.v9_sell_condition_0_enable.value:
             conditions.append(
                 (
@@ -1101,14 +1146,13 @@ class BinClucMadDevelop(IStrategy):
                     (dataframe["close"] > dataframe["bb_upperband"])
                     & (dataframe["close"].shift(1) > dataframe["bb_upperband"].shift(1))
                     & (dataframe["close"].shift(2) > dataframe["bb_upperband"].shift(2))
-                    & (dataframe["close"].shift(2) > dataframe["bb_upperband"].shift(2))
                     & (dataframe["volume"] > 0)
                 )
             )
         if self.v8_sell_condition_1_enable.value:
             conditions.append(
                 (
-                    (dataframe["rsi"] > self.v8_sell_rsi_main.value)
+                    (dataframe["rsi_1h"] > self.v8_sell_rsi_main.value)
                     & (dataframe["volume"] > 0)
                 )
             )
@@ -1140,3 +1184,26 @@ def SSLChannels_ATR(dataframe, length=7):
     df["sslUp"] = np.where(df["hlv"] < 0, df["smaLow"], df["smaHigh"])
 
     return df["sslDown"], df["sslUp"]
+
+
+# SSL Channels
+def SSLChannels(dataframe, length=7):
+    df = dataframe.copy()
+    df["ATR"] = ta.ATR(df, timeperiod=14)
+    df["smaHigh"] = df["high"].rolling(length).mean() + df["ATR"]
+    df["smaLow"] = df["low"].rolling(length).mean() - df["ATR"]
+    df["hlv"] = np.where(
+        df["close"] > df["smaHigh"], 1, np.where(df["close"] < df["smaLow"], -1, np.NAN)
+    )
+    df["hlv"] = df["hlv"].ffill()
+    df["sslDown"] = np.where(df["hlv"] < 0, df["smaHigh"], df["smaLow"])
+    df["sslUp"] = np.where(df["hlv"] < 0, df["smaLow"], df["smaHigh"])
+    return df["sslDown"], df["sslUp"]
+
+
+def EWO(dataframe, ema_length=5, ema2_length=35):
+    df = dataframe.copy()
+    ema1 = ta.EMA(df, timeperiod=ema_length)
+    ema2 = ta.EMA(df, timeperiod=ema2_length)
+    emadif = (ema1 - ema2) / df["close"] * 100
+    return emadif

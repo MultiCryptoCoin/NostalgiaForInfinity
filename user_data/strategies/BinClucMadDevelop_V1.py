@@ -33,7 +33,7 @@ def SSLChannels(dataframe, length=7):
     return df["sslDown"], df["sslUp"]
 
 
-class BinClucMadDevelop(IStrategy):
+class BinClucMadDevelop_V1(IStrategy):
     INTERFACE_VERSION = 2
 
     # minimal_roi = {
@@ -61,7 +61,7 @@ class BinClucMadDevelop(IStrategy):
     trailing_stop_positive_offset = 0.05
 
     # Custom stoploss
-    use_custom_stoploss = False
+    use_custom_stoploss = True
     # Run "populate_indicators()" only for new candle.
     process_only_new_candles = False
 

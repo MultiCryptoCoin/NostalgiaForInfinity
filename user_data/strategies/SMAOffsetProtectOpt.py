@@ -38,7 +38,7 @@ buy_params = {
     "ewo_high": 5.499,
     "ewo_low": -19.881,
     "low_offset": 0.975,
-    "rsi_buy": 67,
+    "rsi_buy": 50,
     "fast_ewo": 50,  # value loaded from strategy
     "slow_ewo": 200,  # value loaded from strategy
 }
@@ -105,23 +105,26 @@ class SMAOffsetProtectOpt(IStrategy):
     )
 
     # Trailing stop:
-    # trailing_stop = False
-    # trailing_stop_positive = 0.001
-    # trailing_stop_positive_offset = 0.01
-    # trailing_only_offset_is_reached = True
+    trailing_stop = True
+    trailing_stop_positive = 0.01
+    trailing_stop_positive_offset = 0.049
+    trailing_only_offset_is_reached = True
 
     # Sell signal
-    # use_sell_signal = True
-    # sell_profit_only = False
-    # sell_profit_offset = 0.01
-    # ignore_roi_if_buy_signal = True
+    use_sell_signal = True
+    sell_profit_only = False
+    sell_profit_offset = 0.01
+    ignore_roi_if_buy_signal = True
+
+    ## Optional order time in force.
+    order_time_in_force = {"buy": "gtc", "sell": "ioc"}
 
     # Optimal timeframe for the strategy
     timeframe = "5m"
     informative_timeframe = "1h"
 
     process_only_new_candles = True
-    startup_candle_count = 200
+    startup_candle_count = 50
 
     # plot_config = {
     #     'main_plot': {

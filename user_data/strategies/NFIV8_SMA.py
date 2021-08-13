@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 
 ###########################################################################################################
-##                NostalgiaForInfinityV8 by iterativ                                                     ##
+##                NFIV8_SMA by iterativ                                                                  ##
 ##                                                                                                       ##
 ##    Strategy for Freqtrade https://github.com/freqtrade/freqtrade                                      ##
 ##                                                                                                       ##
@@ -70,7 +70,7 @@ log = logging.getLogger(__name__)
 ###########################################################################################################
 
 
-class NostalgiaForInfinityNext(IStrategy):
+class NFIV8_SMA(IStrategy):
     INTERFACE_VERSION = 2
 
     plot_config = {
@@ -7891,7 +7891,22 @@ class NostalgiaForInfinityNext(IStrategy):
         informative_1h = self.dp.get_pair_dataframe(
             pair=metadata["pair"], timeframe=self.info_timeframe
         )
+        # EXTRA
+        # EXTRA
+        # EXTRA
 
+        informative_1h["ema_fast"] = ta.EMA(informative_1h, timeperiod=20)
+        informative_1h["ema_slow"] = ta.EMA(informative_1h, timeperiod=25)
+
+        informative_1h["uptrend"] = (
+            (informative_1h["ema_fast"] > informative_1h["ema_slow"])
+        ).astype("int")
+
+        hmao = qtpylib.hull_moving_average(informative_1h["close"], window=14)
+
+        informative_1h["hma_fast"] = hmao
+        hmah = qtpylib.hull_moving_average(informative_1h["close"], window=24)
+        informative_1h["hma_slow"] = hmah
         # EMA
         informative_1h["ema_12"] = ta.EMA(informative_1h, timeperiod=12)
         informative_1h["ema_15"] = ta.EMA(informative_1h, timeperiod=15)
@@ -8251,6 +8266,16 @@ class NostalgiaForInfinityNext(IStrategy):
         return informative_1h
 
     def normal_tf_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        # EXTRA
+        # EXTRA
+        # EXTRA
+        dataframe["ma_lower"] = ta.SMA(dataframe, timeperiod=15) * 0.9528
+        dataframe["rsi_fast"] = ta.RSI(dataframe, timeperiod=4)
+        dataframe["rsi_slow"] = ta.RSI(dataframe, timeperiod=20)
+        dataframe["rsi_slow_descending"] = (
+            dataframe["rsi_slow"] < dataframe["rsi_slow"].shift()
+        ).astype("int")
+
         # BB 40 - STD2
         bb_40_std2 = qtpylib.bollinger_bands(dataframe["close"], window=40, stds=2)
         dataframe["bb40_2_low"] = bb_40_std2["lower"]
@@ -8633,6 +8658,42 @@ class NostalgiaForInfinityNext(IStrategy):
     def populate_buy_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         conditions = []
         dataframe.loc[:, "buy_tag"] = ""
+        conditions.append(
+            (
+                (dataframe["rsi_slow_descending"].rolling(1).sum() == 1)
+                & (dataframe["rsi_fast"] < 35)
+                & (dataframe["uptrend_1h"] > 0)
+                & (dataframe["close"] < dataframe["ma_lower"])
+                & (dataframe["open"] > dataframe["ma_lower"])
+                & (dataframe["volume"] > 0)
+                & (
+                    (dataframe["open"] < dataframe["ema_fast_1h"])
+                    & (dataframe["low"].abs() < dataframe["ema_fast_1h"])
+                    | (dataframe["open"] > dataframe["ema_fast_1h"])
+                    & (dataframe["low"].abs() > dataframe["ema_fast_1h"])
+                    # &
+                    # (
+                    # (dataframe['open']<dataframe['hma_fast_1h'])
+                    # &
+                    # (dataframe['low'].abs()<dataframe['hma_fast_1h'])
+                    # |
+                    # (dataframe['open']>dataframe['hma_fast_1h'])
+                    # &
+                    # (dataframe['low'].abs()>dataframe['hma_fast_1h'])
+                )
+                # &
+                # (
+                # (dataframe['open']<dataframe['ema_slow_1h'])
+                # &
+                # (dataframe['low'].abs()<dataframe['ema_slow_1h'])
+                # |
+                # (dataframe['open']>dataframe['ema_slow_1h'])
+                # &
+                # (dataframe['low'].abs()>dataframe['ema_slow_1h'])
+                # )
+                # )
+            )
+        )
 
         for index in self.buy_protection_params:
             item_buy_protection_list = [True]
