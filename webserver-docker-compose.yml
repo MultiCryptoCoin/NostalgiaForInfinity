@@ -1,0 +1,19 @@
+---
+version: '3'
+services:
+  freqtrade:
+    image: minulislam/freqtrade:develop
+    build:
+       context: .
+       dockerfile: "./docker/Dockerfile.custom"
+    container_name: freqtrade
+    volumes:
+      - "./user_data:/freqtrade/user_data"
+    ports:
+      - "0.0.0.0:${PORT:-4406}:4406"
+    restart: unless-stopped
+    command: >
+      webserver
+      --config user_data/data/pairlists.json
+      --config user_data/pairlist/${PAIRLIST:-binance-usdt-static}.json
+
